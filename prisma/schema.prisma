@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String           @id
+  email          String           @unique
+  encryptionSalt String
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  providerConfigs ProviderConfig[]
+  conversations   Conversation[]
+  mcpServers      McpServerConfig[]
+}
+
+model ProviderConfig {
+  id              String   @id @default(cuid())
+  userId          String
+  providerId      String
+  encryptedApiKey String
+  iv              String
+  authTag         String
+  isActive        Boolean  @default(true)
+  lastTestedAt    DateTime?
+  lastTestSuccess Boolean?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, providerId])
+  @@index([userId])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  providerId     String?
+  modelId        String?
+  toolCalls      Json?
+  toolResults    Json?
+  metadata       Json?
+  parentId       String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  parent       Message?     @relation("MessageBranch", fields: [parentId], references: [id])
+  branches     Message[]    @relation("MessageBranch")
+
+  @@index([conversationId, createdAt])
+  @@index([parentId])
+}
+
+model McpServerConfig {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  url            String
+  encryptedHeaders String?
+  headersIv        String?
+  headersAuthTag   String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
