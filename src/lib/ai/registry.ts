@@ -6,13 +6,14 @@ import { PROVIDER_CATALOG } from "./providers";
 import type { LanguageModel } from "ai";
 
 /**
- * Build a language model instance for the given provider and model ID,
- * using the user's decrypted API key.
+ * Build a language model instance for the given provider and model ID.
+ * For Ollama, apiKey can be empty and customBaseUrl is the local server URL.
  */
 export function buildModel(
   providerId: string,
   modelId: string,
-  apiKey: string
+  apiKey: string,
+  customBaseUrl?: string | null
 ): LanguageModel {
   switch (providerId) {
     case "anthropic": {
@@ -40,6 +41,15 @@ export function buildModel(
         name: "kimi",
         apiKey,
         baseURL: PROVIDER_CATALOG.kimi.baseURL!,
+      });
+      return provider(modelId);
+    }
+    case "ollama": {
+      const baseURL = (customBaseUrl ?? "http://localhost:11434").replace(/\/$/, "") + "/v1";
+      const provider = createOpenAICompatible({
+        name: "ollama",
+        apiKey: "ollama", // Ollama doesn't require a real key
+        baseURL,
       });
       return provider(modelId);
     }

@@ -38,15 +38,15 @@ export default async function ChatConversationPage({
     content: m.content,
   }));
 
-  // Pick default provider: first configured one, or anthropic
+  // Pick default provider: first configured one, or google (Gemini — has free tier)
   const firstConfigured = configuredProviders[0]?.providerId as ProviderId | undefined;
-  const defaultProvider = firstConfigured ?? "anthropic";
+  const defaultProvider = firstConfigured ?? "google";
 
   // Pick default model from catalog
   const { PROVIDER_CATALOG } = await import("@/lib/ai/providers");
   const defaultModel =
     PROVIDER_CATALOG[defaultProvider]?.models[0]?.id ??
-    "claude-sonnet-4-20250514";
+    "gemini-2.5-flash-preview-05-20";
 
   return (
     <ChatInterface

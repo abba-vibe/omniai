@@ -23,9 +23,10 @@ model ProviderConfig {
   id              String   @id @default(cuid())
   userId          String
   providerId      String
-  encryptedApiKey String
-  iv              String
-  authTag         String
+  encryptedApiKey String   @default("")
+  iv              String   @default("")
+  authTag         String   @default("")
+  customBaseUrl   String?
   isActive        Boolean  @default(true)
   lastTestedAt    DateTime?
   lastTestSuccess Boolean?

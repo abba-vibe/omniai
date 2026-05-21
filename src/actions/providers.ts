@@ -6,9 +6,11 @@ import {
   saveProviderKey,
   deleteProviderKey,
   getDecryptedKey,
+  getProviderConfigData,
   updateTestResult,
 } from "@/lib/db/queries/provider-configs";
 import { PROVIDER_CATALOG } from "@/lib/ai/providers";
+import { db } from "@/lib/db/prisma";
 import type { ProviderConfigClient } from "@/types/provider";
 
 export async function getProviderConfigs(): Promise<ProviderConfigClient[]> {
@@ -22,10 +24,15 @@ export async function getProviderConfigs(): Promise<ProviderConfigClient[]> {
     lastTestedAt: c.lastTestedAt?.toISOString() ?? null,
     lastTestSuccess: c.lastTestSuccess,
     hasKey: true,
+    customBaseUrl: (c as { customBaseUrl?: string | null }).customBaseUrl ?? null,
   }));
 }
 
-export async function saveApiKey(providerId: string, apiKey: string) {
+export async function saveApiKey(
+  providerId: string,
+  apiKey: string,
+  customBaseUrl?: string
+) {
   const userId = await requireAuth();
   const user = await getUserWithConfigs(userId);
   if (!user) throw new Error("User not found");
@@ -34,7 +41,7 @@ export async function saveApiKey(providerId: string, apiKey: string) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
 
-  await saveProviderKey(userId, providerId, apiKey, user.encryptionSalt);
+  await saveProviderKey(userId, providerId, apiKey, user.encryptionSalt, customBaseUrl);
   return { success: true };
 }
 
@@ -49,28 +56,28 @@ export async function testApiKey(providerId: string) {
   const user = await getUserWithConfigs(userId);
   if (!user) throw new Error("User not found");
 
-  const key = await getDecryptedKey(userId, providerId, user.encryptionSalt);
-  if (!key) throw new Error("No key configured for this provider");
-
   const provider = PROVIDER_CATALOG[providerId];
   if (!provider) throw new Error(`Unknown provider: ${providerId}`);
 
+  const configData = await getProviderConfigData(userId, providerId, user.encryptionSalt);
+  if (!configData) throw new Error("No config for this provider");
+
+  const { apiKey: key, customBaseUrl } = configData;
+
   try {
-    // Quick validation: make a minimal API call
     let testUrl: string;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${key}`,
     };
 
     switch (providerId) {
-      case "anthropic":
+      case "anthropic": {
         testUrl = "https://api.anthropic.com/v1/messages";
-        headers["x-api-key"] = key;
+        headers["x-api-key"] = key!;
         headers["anthropic-version"] = "2023-06-01";
         headers["Content-Type"] = "application/json";
         delete headers.Authorization;
-        // Send minimal request
-        const anthropicRes = await fetch(testUrl, {
+        const res = await fetch(testUrl, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -79,34 +86,47 @@ export async function testApiKey(providerId: string) {
             messages: [{ role: "user", content: "hi" }],
           }),
         });
-        if (!anthropicRes.ok && anthropicRes.status !== 400) {
-          throw new Error(`API returned ${anthropicRes.status}`);
+        if (!res.ok && res.status !== 400) throw new Error(`API returned ${res.status}`);
+        break;
+      }
+      case "openai": {
+        testUrl = "https://api.openai.com/v1/models";
+        const res = await fetch(testUrl, { headers });
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        break;
+      }
+      case "google": {
+        testUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+        const res = await fetch(testUrl);
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        break;
+      }
+      case "qwen": {
+        testUrl = `${provider.baseURL}/models`;
+        const res = await fetch(testUrl, { headers });
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        break;
+      }
+      case "kimi": {
+        testUrl = `${provider.baseURL}/models`;
+        const res = await fetch(testUrl, { headers });
+        if (!res.ok) throw new Error(`API returned ${res.status}`);
+        break;
+      }
+      case "ollama": {
+        const base = (customBaseUrl ?? "http://localhost:11434").replace(/\/$/, "");
+        // Ollama health check: GET /api/tags lists available models
+        const res = await fetch(`${base}/api/tags`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) throw new Error(`Ollama not reachable at ${base}`);
+        const data = await res.json();
+        const modelCount = data?.models?.length ?? 0;
+        if (modelCount === 0) {
+          throw new Error("Ollama running but no models pulled yet. Run: ollama pull llama3.2");
         }
         break;
-
-      case "openai":
-        testUrl = "https://api.openai.com/v1/models";
-        const openaiRes = await fetch(testUrl, { headers });
-        if (!openaiRes.ok) throw new Error(`API returned ${openaiRes.status}`);
-        break;
-
-      case "google":
-        testUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
-        const googleRes = await fetch(testUrl);
-        if (!googleRes.ok) throw new Error(`API returned ${googleRes.status}`);
-        break;
-
-      case "qwen":
-        testUrl = `${provider.baseURL}/models`;
-        const qwenRes = await fetch(testUrl, { headers });
-        if (!qwenRes.ok) throw new Error(`API returned ${qwenRes.status}`);
-        break;
-
-      case "kimi":
-        testUrl = `${provider.baseURL}/models`;
-        const kimiRes = await fetch(testUrl, { headers });
-        if (!kimiRes.ok) throw new Error(`API returned ${kimiRes.status}`);
-        break;
+      }
     }
 
     await updateTestResult(userId, providerId, true);

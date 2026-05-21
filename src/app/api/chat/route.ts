@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { streamText } from "ai";
 import { buildModel } from "@/lib/ai/registry";
 import { getUserWithConfigs } from "@/lib/db/queries/users";
-import { getDecryptedKey } from "@/lib/db/queries/provider-configs";
+import { getProviderConfigData } from "@/lib/db/queries/provider-configs";
 import { createMessage } from "@/lib/db/queries/messages";
 
 export async function POST(req: Request) {
@@ -20,18 +20,24 @@ export async function POST(req: Request) {
     return new Response("User not found", { status: 404 });
   }
 
-  const apiKey = await getDecryptedKey(
+  const configData = await getProviderConfigData(
     session.userId,
     providerId,
     user.encryptionSalt
   );
-  if (!apiKey) {
-    return new Response(`No API key configured for ${providerId}`, {
-      status: 400,
-    });
+
+  if (!configData) {
+    return new Response(`No config for ${providerId}`, { status: 400 });
   }
 
-  const model = buildModel(providerId, modelId, apiKey);
+  const { apiKey, customBaseUrl } = configData;
+
+  // Ollama doesn't need a real API key
+  if (!apiKey && providerId !== "ollama") {
+    return new Response(`No API key configured for ${providerId}`, { status: 400 });
+  }
+
+  const model = buildModel(providerId, modelId, apiKey ?? "ollama", customBaseUrl);
 
   // Save user message
   const lastUserMsg = messages[messages.length - 1];

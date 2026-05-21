@@ -18,6 +18,7 @@ interface ProviderCardProps {
 
 export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) {
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("http://localhost:11434");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -27,12 +28,19 @@ export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) 
     error?: string;
   } | null>(null);
 
+  const isOllama = provider.id === "ollama";
+  const hasKey = config?.hasKey ?? false;
+
   const handleSave = async () => {
-    if (!apiKey.trim()) return;
+    if (!isOllama && !apiKey.trim()) return;
     setSaving(true);
     setError(null);
     try {
-      await saveApiKey(provider.id, apiKey.trim());
+      await saveApiKey(
+        provider.id,
+        isOllama ? "ollama" : apiKey.trim(),
+        isOllama ? baseUrl.trim() : undefined
+      );
       setApiKey("");
       onUpdate();
     } catch (e) {
@@ -71,11 +79,10 @@ export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) 
     }
   };
 
-  const hasKey = config?.hasKey ?? false;
-
   return (
     <div className="rounded-xl border border-border bg-surface p-5">
-      <div className="flex items-start justify-between mb-4">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-surface-raised border border-border-subtle flex items-center justify-center">
             <Image
@@ -112,6 +119,25 @@ export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) 
         )}
       </div>
 
+      {/* Free tier note */}
+      {provider.freeKeyNote && (
+        <div className="mb-3 flex items-center gap-1.5">
+          <span className="text-[11px] text-emerald-400 font-medium">
+            ✦ {provider.freeKeyNote}
+          </span>
+          {provider.freeKeyUrl && !hasKey && (
+            <a
+              href={provider.freeKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-accent hover:text-accent/80 underline underline-offset-2 transition-colors ml-1"
+            >
+              Get free key →
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Models list */}
       <div className="flex flex-wrap gap-1.5 mb-4">
         {provider.models.map((model) => (
@@ -124,32 +150,55 @@ export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) 
         ))}
       </div>
 
-      {/* Key input */}
+      {/* Input area */}
       {hasKey ? (
-        <div className="flex items-center gap-2">
-          <div className="flex-1 h-10 rounded-lg border border-border bg-surface-raised px-3 flex items-center">
-            <span className="text-sm text-zinc-500 font-mono tracking-wider">
-              {"•".repeat(24)}
-            </span>
+        <div className="space-y-2">
+          {isOllama && config?.customBaseUrl && (
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-zinc-500 font-mono truncate">{config.customBaseUrl}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-10 rounded-lg border border-border bg-surface-raised px-3 flex items-center">
+              <span className="text-sm text-zinc-500 font-mono tracking-wider">
+                {isOllama ? "● Local Ollama server" : "•".repeat(24)}
+              </span>
+            </div>
+            <Button variant="secondary" size="sm" onClick={handleTest} loading={testing}>
+              Test
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleRemove} loading={removing}>
+              Remove
+            </Button>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleTest}
-            loading={testing}
-          >
-            Test
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={handleRemove}
-            loading={removing}
-          >
-            Remove
-          </Button>
+        </div>
+      ) : isOllama ? (
+        /* Ollama: URL input, no API key needed */
+        <div className="space-y-2">
+          <div className="rounded-lg border border-border-subtle bg-zinc-900/50 px-3 py-2 text-xs text-zinc-400 leading-relaxed">
+            Ollama must be running locally. Install from{" "}
+            <a href="https://ollama.ai" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+              ollama.ai
+            </a>{" "}
+            then run <code className="font-mono text-zinc-300">ollama pull llama3.2</code>
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Input
+                type="url"
+                placeholder="http://localhost:11434"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                error={error ?? undefined}
+              />
+            </div>
+            <Button onClick={handleSave} loading={saving}>
+              Connect
+            </Button>
+          </div>
         </div>
       ) : (
+        /* Standard: API key input */
         <div className="flex items-end gap-2">
           <div className="flex-1">
             <Input
@@ -157,6 +206,7 @@ export function ProviderCard({ provider, config, onUpdate }: ProviderCardProps) 
               placeholder={`Enter ${provider.name} API key`}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSave()}
               error={error ?? undefined}
             />
           </div>
